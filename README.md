@@ -1,6 +1,5 @@
 # Galaxea_Coral_Model
 
-Data and code used to produce the results reported in the manuscipt "**The reef-building coral *Galaxea fascicularis*: a new model system for coral symbiosis**" currently under review at Coral Reefs.   
+Data and code used to analyze the results of the thermal performance experiment described in the manuscipt "**The reef-building coral *Galaxea fascicularis*: a new model system for coral symbiosis**" currently under review at Coral Reefs.   
 
-### Note for **Giulia**:
-Remove the html file *or* check WTF is wrong with knitting ... none of the plots shows! Also, fix the comment "MAKE IN LINE CODE".
+Preprint is also available at https://www.biorxiv.org/content/10.1101/2022.06.02.494472v1
