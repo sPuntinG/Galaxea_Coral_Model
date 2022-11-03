@@ -1,6 +1,20 @@
+# Script description --------------------
 
-# Great tutorial here:
-# https://ourcodingclub.github.io/tutorials/mixed-models/#what
+# What's happening here:
+
+# Q1: is there a significant difference between SYMBIOTIC STATES 
+#  (symb vs bleached) in DARK incubations (so looking at R - respiration)?
+#   (note: no need to test this for light incubation as that is obvious:
+#   symbiotic have net O2 production while bleached have net O2 consumption)
+
+# Q2: is there a significant difference between COLONIES (RS1, RS2, RS3)?
+#  For this we look at light incubations (PN, Q2.1) and 
+#  dark incubations (R; Q2.2) separately.
+
+
+# Load packages -------------------------
+
+# R version 4.1.0 (2021-05-18)
 
 library(tidyverse)
 library(here)
@@ -8,33 +22,32 @@ library(here)
 library(lmerTest)
 library(report)
 library(performance)
-# library(stargazer) # only works on lme4::lmer(), not lmerTest::lmer()
-library(sjPlot)
+# library(sjPlot)
 library(emmeans)
 
-options(scipen=999) # switch off scientific notation
+
+options(scipen = 999) # switch off scientific notation
+
 
 # Import and prepare data ----------------------------------------
 
 DATA <- read_csv("./DATA_MS.csv")
 
-
-## Colony as factor --------------
+## Colony as factor 
 # Since (old) colony names are numbers, let's make sure they're treated
-# as categorical
+# as categorical, however I will use 'Colony_ms' to match names with the MS
 DATA <- DATA %>% mutate(Colony = factor(Colony))
 DATA$Colony %>% class()
 
 
-# Check replication -----------------
+# Check replication 
 DATA %>% 
   group_by(State, Day, Incub_type) %>% 
   summarize(n_polyps = length(Polyp_ID)) # %>% view()
 
-# MAYBE OUTPUT TABLE?
 
 
-# Plot: Overview of polyps by incubation -----------------------------------
+# Plot: Overview of polyps by incubation
 ggplot(data = DATA, aes(x = factor(Day), y = Polyp_ID, color = Colony_ms)) + 
   geom_point(position = position_dodge(width = 0.75), 
              aes(shape = forcats::fct_rev(factor(Incub_type)))
@@ -48,10 +61,9 @@ ggplot(data = DATA, aes(x = factor(Day), y = Polyp_ID, color = Colony_ms)) +
              strip.position = "right", dir = "v", scale = "free" )
 
 
-## Subsets --------------------------------------
 
+## Subsets
 # Remove controls and separate (subset) light and dark incubations
-
 corals <- DATA %>%
   filter(State != "Control")
 
@@ -60,6 +72,20 @@ dark <- corals %>%
 
 light <- corals %>% 
   filter(Incub_type == "Light")
+
+
+# Notes on statistical approach --------------------
+
+# 1. In all models: set Polyp_id as random factor (1|Polyp_ID) because the same
+#    polyps were repeatedly measured at every incubation (every day)
+# 2. Data is not transformed, as normality of the DV is not a requirement, rather
+#    residuals should show no clear patterns. See: https://www.biorxiv.org/content/10.1101/305946v1
+# 3. Variable such as 'State' (= symbiotic state) and 'Colony_ms' (colony id)
+#    are always treated as fixed factors (even when I would consider them a 
+#    random factor) because the have < 5 levels.
+#    -> as a result, Q1 and Q2.2 can be answered by the same model
+#  4. Temperature ('temp_byWB_mean' = mean temperature of the waterbath) is 
+#     a continuos vaiable and as such is always treated as fixed factor.
 
 
 
@@ -77,22 +103,13 @@ state1 <- lmerTest::lmer(Pn_ug ~ State + (1|Polyp_ID),
 summary(state1)
 report::report(state1)
 
-### Checks ------------------
-performance::check_normality(state1, type = "qq")
+# Checks
 performance::check_normality(state1, type = "qq", effects = "fixed")
-performance::check_normality(state1, type = "qq", effects = "random") # 
-# all residuals appear normally distributed (p > 0.05) excpet for 
-# the random effect (p = 0.042)
+performance::check_normality(state1, type = "qq", effects = "random")
 
-# Residuals
 plot(state1)
-
 qqnorm(resid(state1)); qqline(resid(state1))
- # not exactly the best ...
 
-
-# P value
-coefficients(summary(state1))[2,5] %>% round(., 4) # 0.0047 * significant
 
 
 ## Mod state2 ------------------
@@ -100,245 +117,203 @@ state2 <- lmerTest::lmer(Pn_ug ~ State + Colony_ms + (1|Polyp_ID),
                          data = dark, 
                          REML = F)
 
-# state2 <- lme4::lmer(Pn_ug ~ State + Colony_ms + (1|Polyp_ID), 
-#                          data = dark, 
-#                          REML = F)
-
 summary(state2)
-summary(state2) %>% coefficients()
 report::report(state2)
 
-performance::check_normality(state2, type = "qq")
 performance::check_normality(state2, type = "qq", effects = "fixed")
 performance::check_normality(state2, type = "qq", effects = "random")
-# all residuals appear normally distributed (p > 0.05)
 
-# Residuals
 plot(state2)
-
 qqnorm(resid(state2)); qqline(resid(state2))
-# not exactly the best, but ok ...
-
-
-# P value
-coefficients(summary(state2))[2,5] %>% round(., 4) # 0.0002 *** very significant
-
-
-# mod summary table
-# stargazer::stargazer(state2, type = "text",
-#                      digits = 3,
-#                      star.cutoffs = c(0.05, 0.01, 0.001),
-#                      digit.separator = "")
 
 
 
-## Compare the two models --------------------
+## Mod state3 ------------------
+state3 <- lmerTest::lmer(Pn_ug ~ State + Colony_ms + Temp_byWB_mean + (1|Polyp_ID), 
+                         data = dark, 
+                         REML = F)
 
-AIC(state1) # 1560.608
-AIC(state2) # 1547.212 
+summary(state3)
+report::report(state3)
 
+performance::check_normality(state3, type = "qq", effects = "fixed")
+performance::check_normality(state3, type = "qq", effects = "random")
 
-### plot(performance::compare_performance(
-###   state1,
-###   state2,
-###   rank = F))
-### 
-### 
-### performance::compare_performance(
-###   state1,
-###   state2,
-###   rank = T)
-
-# In both models, 'State' is significant. The second model (state2) is better 
-#  in term of distribution of residuals and AIC score.
+plot(state3)
+qqnorm(resid(state3)); qqline(resid(state3))
 
 
 
+## Compare the models --------------------
+
+AIC(state1) 
+AIC(state2) 
+AIC(state3) # <- best
 
 
-# Q2. Effect of **colony** identity on Pn and R (RS1 vs RS2 vs RS3) -----------
+ plot(performance::compare_performance(
+   state1,
+   state2,
+   state3, # <- best
+   rank = F))
+ 
+ 
+ performance::compare_performance(
+   state1,
+   state2,
+   state3, # <- best
+   rank = T) %>% view()
+ 
 
-# Q2: is there an *overall* significant difference between colonies in 
-# their physiological performance?      
-# Where *overall* means across the whole data set, hence considering both 
-# light (Pn) and dark (R) incubations together (in the same model).  
-# 
-# Note that I have a unique variable `Pn_ug` (= Pn as ug of DO per ...) for 
-# both light and dark incubations, which is positive when there is 
-# a net production of oxygen (symbiotic in light), while is negative when 
-# there is a net consumption of oxygen (symb in dark, and bleached always).
+## Q2. Conclusions -----------------------
 
+# In all models, 'State' is highly significant. 
+# The model 'state3' (includes temperature) has the best explanatory power and 
+#  and performance, so we consider the significance levels of this model.
+# Namely, we see that 'State', 'Colony_ms', and 'Temp_byWB_mean' are all 
+# significant:
+#  Fixed effects:
+#                    Estimate Std. Error        df t value             Pr(>|t|)    
+#  (Intercept)     31.06005    2.15223 185.29230  14.432 < 0.0000000000000002 ***
+#  StateSymbiotic  -4.17309    1.08594  23.95737  -3.843             0.000785 ***
+#  Colony_msRS2    -5.83244    1.32940  23.91336  -4.387             0.000199 ***
+#  Colony_msRS3    -0.28202    1.32799  23.82782  -0.212             0.833626    
+#  Temp_byWB_mean  -1.61009    0.07248 210.75853 -22.216 < 0.0000000000000002 ***
 
-## Colony effect across all incubations (light & dark together) -----
+# >>> Therefore this already answers the following question of whether colony 
+# identity has a significant effect on O2 evolution (R) in dark incubations
+# (Q2.2)
+ 
 
-## Mod colony 1 ---------------
-colony1 <- lmer(Pn_ug ~ Colony + (1|Polyp_ID), 
-                data = corals, REML = F)
+# >>> Next, we want to look at **light** (PN) incubations  
+#  to see if there are significant differences between colonies 
 
-# Residuals
-plot(colony1)
-qqnorm(resid(colony1)); qqline(resid(colony1))
-
-plot(performance::check_normality(colony1, type = "qq"))
-
-performance::check_normality(colony1, type = "qq")
-performance::check_normality(colony1, type = "qq", effects = "fixed")
-performance::check_normality(colony1, type = "qq", effects = "random")
-# Non-normality detected for all effects!
-
-
-
-## Mod colony 2 ---------------
-colony2 <- lmer(Pn_ug ~ Colony + Incub_type + State + (1|Polyp_ID),
-                data = corals, REML = F)
-
-# Residuals
-plot(colony2)
-qqnorm(resid(colony2)); qqline(resid(colony2))
-
-performance::check_normality(colony2, type = "qq")
-performance::check_normality(colony2, type = "qq", effects = "fixed")
-performance::check_normality(colony2, type = "qq", effects = "random")
-# Non-normality detected for all effects!
-
-
-## Mod colony 3 ---------------
-colony3 <- lmer(Pn_ug ~ Colony + Incub_type * State + (1|Polyp_ID),
-                data = corals, REML = F)
-
-summary(colony3)
-# Fixed effects:
-# Estimate Std. Error       df t value             Pr(>|t|)    
-# (Intercept)                    -11.2923     0.7881  38.0252 -14.328 < 0.0000000000000002 ***
-# Colony53                        -2.5925     0.8647  24.3632  -2.998              0.00617 ** 
-# Colony60                         0.5211     0.8606  24.5553   0.606              0.55040    
-# Incub_typeLight                  3.1647     0.7175 442.4623   4.411           0.00001296 ***
-# StateSymbiotic                  -4.6462     0.8654  54.6220  -5.369           0.00000167 ***
-# Incub_typeLight:StateSymbiotic  22.3724     0.9999 442.6877  22.374 < 0.0000000000000002 ***
-
-# Residuals
-plot(colony3)
-qqnorm(resid(colony3)); qqline(resid(colony3))
-
-plot(performance::check_normality(colony3, type = "qq")) # normally distr.!
-
-performance::check_normality(colony3, type = "qq")
-performance::check_normality(colony3, type = "qq", effects = "fixed")
-performance::check_normality(colony3, type = "qq", effects = "random")
-# Warning: Non-normality of random effects detected (p = 0.002)
-
-report::report(colony3) 
-# We fitted a linear mixed model (estimated using ML and nloptwrap optimizer) to predict Pn_ug with Colony, Incub_type and State (formula: Pn_ug ~ Colony + Incub_type * State). The model included Polyp_ID as random effect (formula: ~1 | Polyp_ID). The model's total explanatory power is substantial (conditional R2 = 0.77) and the part related to the fixed effects alone (marginal R2) is of 0.76. The model's intercept, corresponding to Colony = 6, Incub_type = Dark and State = Bleached, is at -11.29 (95% CI [-12.84, -9.74], t(458) = -14.33, p < .001). Within this model:
-#   
-# - The effect of Colony [53] is statistically significant and negative 
-# (beta = -2.59, 95% CI [-4.29, -0.89], t(458) = -3.00, p = 0.003; Std. beta = -0.23, 95% CI [-0.38, -0.08])
-# - The effect of Colony [60] is statistically non-significant and positive 
-# (beta = 0.52, 95% CI [-1.17, 2.21], t(458) = 0.61, p = 0.545; Std. beta = 0.05, 95% CI [-0.10, 0.20])
-# - The effect of Incub type [Light] is statistically significant and positive 
-# (beta = 3.16, 95% CI [1.75, 4.57], t(458) = 4.41, p < .001; Std. beta = 0.28, 95% CI [0.15, 0.40])
-# - The effect of State [Symbiotic] is statistically significant and negative 
-# (beta = -4.65, 95% CI [-6.35, -2.95], t(458) = -5.37, p < .001; Std. beta = -0.41, 95% CI [-0.56, -0.26])
-# - The interaction effect of State [Symbiotic] on Incub type [Light] is statistically 
-#   significant and positive (beta = 22.37, 95% CI [20.41, 24.34], t(458) = 22.37, p < .001; Std. beta = 1.97, 95% CI [1.80, 2.15])
-
-
-
-## Mod colony 4 ---------------
-colony4 <- lmer(Pn_ug ~ Colony + (1|Incub_type) + (1|State) + (1|Polyp_ID),
-                data = corals, REML = F)
-
-# Residuals
-plot(colony4)
-qqnorm(resid(colony4)); qqline(resid(colony4))
-
-performance::check_normality(colony4, type = "qq")
-performance::check_normality(colony4, type = "qq", effects = "fixed")
-performance::check_normality(colony4, type = "qq", effects = "random")
-# Non-normality detected for all effects!
-
-
-## Conclusions --------------------
-
-# In all models the residuals show clear patterns (bad) and 
-#  are non-normally distributed!
-
-# EXCEPT FOR MOD 3 THAT HAS NORMALLY DISTRIBUTED RESIDUALS!
-
-# So, need to consider light and dark incubations separately.
 
 
 
 # Q2.1. Colony effect in LIGHT incubations only -------------
 
 ## Mod colony light 1 ----------------
-colony_light1 <- lmer(Pn_ug ~ Colony + (1|Polyp_ID),
+colony_light1 <- lmer(Pn_ug ~ Colony_ms + (1|Polyp_ID),
                       data = light, REML = F)
 
 summary(colony_light1)
 
-# Residuals
+performance::check_normality(colony_light1, type = "qq", effects = "fixed")
+performance::check_normality(colony_light1, type = "qq", effects = "random")
+
 plot(colony_light1) # clear pattern ...
 qqnorm(resid(colony_light1)); qqline(resid(colony_light1))
 
-performance::check_normality(colony_light1, type = "qq")
-performance::check_normality(colony_light1, type = "qq", effects = "fixed")
-performance::check_normality(colony_light1, type = "qq", effects = "random")
-# Warning: Non-normality of random effects detected (p < .001).
 
 
 ## Mod colony light 2 ---------------
-colony_light2 <- lmer(Pn_ug ~ Colony + State + (1|Polyp_ID),
+colony_light2 <- lmer(Pn_ug ~ Colony_ms + State + (1|Polyp_ID),
                       data = light, REML = F)
 
-summary(colony_light2)
+summary(colony_light2) # again, State is signif, but not Colony_ms
 
-# Residuals
-plot(colony_light2) # clear pattern ...
-qqnorm(resid(colony_light2)); qqline(resid(colony_light2))
-
-performance::check_normality(colony_light2, type = "qq")
 performance::check_normality(colony_light2, type = "qq", effects = "fixed")
 performance::check_normality(colony_light2, type = "qq", effects = "random")
-# All appear as normally distributed (p > 0.05)
 
+plot(colony_light2)
+qqnorm(resid(colony_light2)); qqline(resid(colony_light2))
 
 
 
 ## Mod colony light 3 ---------------
-colony_light3 <- lmer(Pn_ug ~ Colony + State + Colony * State + (1|Polyp_ID),
+
+colony_light3 <- lmer(Pn_ug ~ Colony_ms + State + Colony_ms * State + (1|Polyp_ID),
                       data = light, REML = F)
 
 summary(colony_light3)
 
-# Residuals
-plot(colony_light3) # clear pattern ...
+performance::check_normality(colony_light3, type = "qq", effects = "fixed")
+performance::check_normality(colony_light3, type = "qq", effects = "random")
+
+plot(colony_light3) 
 qqnorm(resid(colony_light3)); qqline(resid(colony_light3))
 
 
 
 ## Mod colony light 4 ---------------
-colony_light4 <- lmer(Pn_ug ~ Colony + (1|State) + (1|Polyp_ID),
+colony_light4 <- lmer(Pn_ug ~ Colony_ms + State + Temp_byWB_mean + (1|Polyp_ID),
                       data = light, REML = F)
 
 summary(colony_light4)
 
-# Residuals
-plot(colony_light4) # clear pattern ...
+performance::check_normality(colony_light4, type = "qq", effects = "fixed")
+performance::check_normality(colony_light4, type = "qq", effects = "random")
+
+plot(colony_light4) 
 qqnorm(resid(colony_light4)); qqline(resid(colony_light4))
 
 
 
 
-# Q2.2. Colony effect in DARK incubations only -------------
+## Compare the models --------------------
+
+AIC(colony_light1) 
+AIC(colony_light2)  
+AIC(colony_light3) 
+AIC(colony_light4) # <- the best
+
+
+plot(performance::compare_performance(
+  colony_light1,
+  colony_light2,
+  colony_light3,
+  colony_light4, # <- the best
+  rank = F))
+
+
+performance::compare_performance(
+  colony_light1,
+  colony_light2,
+  colony_light3,
+  colony_light4, # <- the best
+  rank = T) %>% view()
+
+
+
+## Q2.1. Conclusions ----------------------------------
+
+# In none of the models 'Colony_ms' (= colony id) is significant. 
+# The model 'colony_light4' (includes temperature) has the best explanatory 
+# power and performance, so we consider the significance levels of this model.
+# Namely, we see that 'Colony_ms' is not significant in light incubations 
+#  (this answers our question), while, as before, 'State', and 'Temp_byWB_mean' are significant:
+# 
+#                  Estimate Std. Error        df t value             Pr(>|t|)    
+#  (Intercept)     11.30993    1.56905 189.51179   7.208      0.0000000000131 ***
+#  Colony_msRS2     0.13288    0.95211  24.58620   0.140                0.890    
+#  Colony_msRS3     0.56802    0.94038  25.22523   0.604                0.551    
+#  StateSymbiotic  17.83048    0.77183  25.11451  23.101 < 0.0000000000000002 ***
+#  Temp_byWB_mean  -0.78535    0.05236 212.04537 -14.999 < 0.0000000000000002 ***
 
 
 
 
 
-# Q3. Pairwise comparison btw colonies (emmeans) -----------------------
 
-# Test differences between colonies as pairwise comparison 
+
+# Q2.2.3. Pairwise comparison btw colonies (emmeans) -----------------------
+
+# Now that we have established that colony id has a significant effect in 
+#  **dark** incubations (R), we want to see which colonies are significantly 
+# different from each other.
+
+# >>> Test differences between colonies as pairwise comparison 
 # of *estimated marginal means*, with *Bonferroni* correction.
-ems <- emmeans::emmeans(colony_dark1, list(pairwise ~ Colony_ms), adjust = "bonferroni")
+ems <- emmeans::emmeans(state3, list(pairwise ~ Colony_ms), adjust = "bonferroni")
 
 ems$`pairwise differences of Colony_ms` %>% as.data.frame()
+#             estimate       SE       df    t.ratio     p.value
+# RS1 - RS2  5.8324385 1.456848 28.78975  4.0034649 0.001201065
+# RS1 - RS3  0.2820232 1.455486 28.71707  0.1937656 1.000000000
+# RS2 - RS3 -5.5504153 1.459409 28.94023 -3.8031929 0.002047508
+
+
+## Q2.2.3. Conclusions ---------------------
+# Colony RS2 (old name: '#53') is significantly different from the other two
+#  colonies (stats confirm pattern visible in Fig. S4).
